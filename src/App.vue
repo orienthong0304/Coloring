@@ -59,7 +59,7 @@ export default {
 
       // 添加 svg
       fabric.loadSVGFromURL(
-        "https://raw.githubusercontent.com/orienthong0304/coloring/main/final_output1.svg",
+        "https://raw.githubusercontent.com/orienthong0304/coloring/main/Z1.svg",
         function (objects, options) {
           var group = fabric.util.groupSVGElements(objects, options);
           // 根据 Canvas 画布尺寸压缩大小
