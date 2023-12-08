@@ -1,21 +1,54 @@
 <template>
   <div id="app">
-    <van-floating-bubble icon="chat" @click="onClick" />
+    <!-- <van-nav-bar title="标题"/> -->
+
+    <van-floating-bubble icon="chat"/>
     <canvas
       id="c"
-      class="app-canvas border-small"
-    ></canvas>
-    <van-button type="primary" round class="btn" @click="drawBtn">
-      {{ isAllowDraw ? "关闭" : "涂色" }}
-    </van-button>
-    <van-button type="primary" round class="btn" @click="isDrawingModeBtn">
-      {{ isDrawingMode ? "关闭" : "画笔" }}
-    </van-button>
+      class="app-canvas border-small"></canvas>
+    <van-floating-panel v-model:height="height" :anchors="anchors">
+      <van-row justify="space-around" style="margin-bottom: 10px;">
+        <van-button type="primary" round class="btn" @click="fillBtn">
+          {{ isAllowDraw ? "关闭" : "填充" }}
+        </van-button>
+        <van-button type="primary" round class="btn" @click="isDrawingModeBtn">
+          {{ isDrawingMode ? "关闭" : "画笔" }}
+        </van-button>
+        <van-button type="primary" round class="btn" @click="isDrawingModeBtn">
+          {{ isDrawingMode ? "关闭" : "擦除" }}
+        </van-button>
+      </van-row>
 
-    <van-floating-panel v-model:height="height" :anchors="anchors" content-draggable="false">
-      <div style="text-align: center; padding: 15px;">
-        <p>面板显示高度 {{ height.toFixed(0) }} px</p>
-      </div>
+      <van-row justify="space-around" style="margin-bottom: 10px;">
+        <van-button type="primary" round class="btn" @click="isDrawingModeBtn">
+          {{ isDrawingMode ? "关闭" : "撤销" }}
+        </van-button>
+        <van-button type="primary" round class="btn" @click="isDrawingModeBtn">
+          {{ isDrawingMode ? "关闭" : "重做" }}
+        </van-button>
+        <van-button type="primary" round class="btn" @click="isDrawingModeBtn">
+          {{ isDrawingMode ? "关闭" : "清空" }}
+        </van-button>
+      </van-row>
+
+      <van-row justify="space-around" style="margin-bottom: ;">
+        <van-button type="primary" round class="btn" @click="isDrawingModeBtn">
+          {{ isDrawingMode ? "关闭" : "保存" }}
+        </van-button>
+        <van-button type="primary" round class="btn" @click="isDrawingModeBtn">
+          {{ isDrawingMode ? "关闭" : "分享" }}
+        </van-button>
+        <van-button type="primary" round class="btn" @click="isDrawingModeBtn">
+          {{ isDrawingMode ? "关闭" : "下载" }}
+        </van-button>
+      </van-row>
+
+      <van-row justify="center">
+        <color-picker v-model:pureColor="pureColor" shape="circle"/>
+        <color-picker v-model:gradientColor="gradientColor" shape="circle" useType="gradient"/>
+        <input type="color" v-model="drawingColorEl" style="width: 25px; height: 25px; border-radius: 50%;"/>
+      </van-row>
+      
     </van-floating-panel>
   </div>
 </template>
@@ -23,24 +56,29 @@
 <script>
 import { onMounted, ref } from "vue";
 import { fabric } from "fabric";
+import { ColorInputWithoutInstance } from "tinycolor2";
 
 export default {
   name: "App",
   setup() {
+
+    const pureColor = ref<ColorInputWithoutInstance>("red");
+    const gradientColor = ref("linear-gradient(0deg, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 1) 100%)");
     const canvas = ref(null);
     const isMutiTouch = ref(false);
-    const drawingColorEl = ref("#ff0000ff");
+    const drawingColorEl = ref("#FF0000");
     const selectedPath = ref(null);
     const initialDistance = ref(0);
     const lastScale = ref(1);
     const lastTouches = ref([]);
+    const currentMidpoint = ref(null);
     //是否允许涂色
     const isAllowDraw = ref(false);
     const isDrawingMode = ref(false);
     const isDrawing = ref(false);
 
     const anchors = [
-      100,
+    Math.round(0.3 * window.innerHeight),
       // Math.round(0.4 * window.innerHeight),
       Math.round(0.7 * window.innerHeight),
     ];
@@ -49,8 +87,8 @@ export default {
     onMounted(() => {
       // 初始化 Fabric 画布
       canvas.value = new fabric.Canvas("c", {
-        width: window.innerWidth * 0.9,
-        height: window.innerWidth * 0.9,
+        width: window.innerWidth,
+        height: window.innerHeight * 0.7,
         isDrawingMode: false,
         subTargetCheck: true,
         allowTouchScrolling: false,
@@ -59,44 +97,58 @@ export default {
 
       // 添加 svg
       fabric.loadSVGFromURL(
-        "https://raw.githubusercontent.com/orienthong0304/coloring/main/Z1.svg",
+        "https://raw.githubusercontent.com/orienthong0304/Coloring/main/coloring/1.svg",
         function (objects, options) {
           var group = fabric.util.groupSVGElements(objects, options);
           // 根据 Canvas 画布尺寸压缩大小
           var scale = canvas.value.width / group.width;
-          group.scale(scale);
+          group.scale(scale * 0.9);
           group.forEachObject(function (obj) {
-            console.log(obj)
-            //如果对象是透明色
-            // if (obj.fill == "#fcfdfe") {
-            //   console.log("透明色")
-            //   obj.set({
-            //     fill: "blue"
-            //   });
-            // }
             obj.set({
               perPixelTargetFind: true,
               selectable: false,
               objectCaching: false,
               evented: true, // 允许透明路径响应事件
             });
+            //把对象添加到画布，并相对居中
             canvas.value.add(obj);
           });
-          // canvas.value.setBackgroundColor("blue", canvas.value.renderAll.bind(canvas));
-          // 加载背景图像
-          // fabric.Image.fromURL('https://example.com/background-image.jpg', function (img) {
-          //   // 设置画布背景
-          //   canvas.value.setBackgroundImage(img, canvas.value.renderAll.bind(canvas), {
-          //     // 背景图像的设置选项
-          //     originX: 'left',
-          //     originY: 'top',
-          //     scaleX: canvas.width / img.width,  // 根据需要缩放图像以适应画布大小
-          //     scaleY: canvas.height / img.height
-          //   });
-          // });
-          // canvas.value.renderAll();
+          // 将画布内容居中
+          canvas.value.centerObject(group);
+          // 给 group 添加一个外边框
+          var rect = new fabric.Rect({
+            left: group.left,
+            top: group.top,
+            width: canvas.value.width * 0.9,
+            height: canvas.value.width * 0.9,
+            stroke: "black",
+            strokeWidth: 1,
+            fill: "transparent",
+            selectable: false,
+            evented: false,
+          });
+          // 将外边框添加到group
+          // group.addWithUpdate(rect);
+          // 将外边框添加到画布
+          canvas.value.add(rect);
+          // 设置背景颜色
+          canvas.value.setBackgroundColor("white", canvas.value.renderAll.bind(canvas.value));
+          // 重新渲染画布
+          canvas.value.renderAll();
         }
       );
+
+      // // 加载背景图像
+      // fabric.Image.fromURL('https://example.com/background-image.jpg', function (img) {
+      //   // 设置画布背景
+      //   canvas.value.setBackgroundImage(img, canvas.value.renderAll.bind(canvas), {
+      //     // 背景图像的设置选项
+      //     originX: 'left',
+      //     originY: 'top',
+      //     scaleX: canvas.width / img.width,  // 根据需要缩放图像以适应画布大小
+      //     scaleY: canvas.height / img.height
+      //   });
+      // });
 
       fabric.Object.prototype.transparentCorners = false; //画布边框
       canvas.value.on("mouse:down", function (options) {
@@ -155,6 +207,18 @@ export default {
         }
       });
 
+      canvas.value.on("path:created", function (e) {
+        console.log("path:created", e)
+        var path = e.path;
+        path.set({
+          perPixelTargetFind: true,
+          selectable: false,
+          objectCaching: false,
+        });
+        // canvas.value.renderAll();
+        // canvas.value.add(path);
+      });
+
       canvas.value.on("mouse:wheel", function (opt) {
         // 获取鼠标滚轮的滚动方向
         var delta = opt.e.deltaY;
@@ -200,78 +264,76 @@ export default {
     });
 
     function canvasTouchStart(e) {
-      console.log("start:", e);
+      // console.log("start:", e);
       if (e.touches.length > 1) {
         isMutiTouch.value = true;
         initialDistance.value = getDistance(e.touches[0], e.touches[1]);
         lastScale.value = canvas.value.getZoom();
         lastTouches.value = e.touches;
+        // 计算双指中心点
+        currentMidpoint.value = getMidpoint(e.touches[0], e.touches[1]);
       }
     }
 
+    let throttleTimer;
+    
     function canvasTouchMove(e) {
-      // console.log("move:", e)
-      if (e.touches.length === 1) {
-        // 画布执行拖动操作
-        canvas.value.relativePan({
-          x: e.touches[0].clientX - e.touches[0].clientX,
-          y: e.touches[0].clientY - e.touches[0].clientY,
+      // 节流处理，减少函数调用频率
+      if (!throttleTimer) {
+        throttleTimer = requestAnimationFrame(() => {
+          // 处理多点触控
+          if (e.touches.length > 1) {
+            isMutiTouch.value = true;
+            // 计算当前距离和缩放比例
+            var currentDistance = getDistance(e.touches[0], e.touches[1]);
+            var scale = (currentDistance / initialDistance.value) * lastScale.value;
+            // 限制缩放比例范围
+            scale = Math.max(1, Math.min(scale, 20));
+            // 自动居中画布（当缩放比例为1）
+            if (scale === 1) {
+              canvas.value.setViewportTransform([1, 0, 0, 1, 0, 0]);
+            } else {
+              canvas.value.zoomToPoint(
+                new fabric.Point(currentMidpoint.value.x, currentMidpoint.value.y),
+                scale
+              );
+            }
+            // if(!isDrawingMode) {
+            //   e.preventDefault();
+            //   e.stopPropagation();
+            // }
+          }
+          throttleTimer = null;
         });
       }
-      if (e.touches.length > 1) {
-        isMutiTouch.value = true;
-        var currentDistance = getDistance(e.touches[0], e.touches[1]);
-        var scale = (currentDistance / initialDistance.value) * lastScale.value;
-
-        // 设置缩放比例的上限和下限
-        if (scale > 20) scale = 20;
-        if (scale < 1) {
-          scale = 1;
-          // 当缩放比例为 1 时自动居中画布
-          canvas.value.setViewportTransform([1, 0, 0, 1, 0, 0]);
-        }
-        
-        var currentMidpoint = getMidpoint(e.touches[0], e.touches[1]);
-        var lastMidpoint = getMidpoint(lastTouches.value[0], lastTouches.value[1]);
-        const deltaX = currentMidpoint.x - lastMidpoint.x;
-        const deltaY = currentMidpoint.y - lastMidpoint.y;
-
-        const distanceChange = Math.abs(
-          e.touches[0].clientY - e.touches[1].clientY
-        );
-
-        // 判断是否为缩放操作
-        if (distanceChange > 20) {
-          // 缩放画布
-          canvas.value.zoomToPoint(
-            new fabric.Point(currentMidpoint.x, currentMidpoint.y),
-            scale
-          );
-        } else {
-          // 画布执行拖动操作
-          canvas.value.relativePan({
-            x: deltaX,
-            y: deltaY,
-          });
-        }
+      if (!isDrawingMode.value) {
+        e.preventDefault();
+        e.stopPropagation();
       }
     }
 
+
     function canvasTouchEnd(e) {
-      console.log("end: ", e)
+      // console.log("end: ", e)
       if (e.touches.length === 0) {
         isMutiTouch.value = false;
       }
     }
 
-    function drawBtn() {
+    function fillBtn() {
       isAllowDraw.value = !isAllowDraw.value;
-      // canvas.value.isDrawingMode = isDrawingMode.value;
+      if (isDrawingMode.value) {
+        canvas.value.isDrawingMode = false;
+        isDrawingMode.value = false;
+      }
     }
 
     function isDrawingModeBtn() {
       isDrawingMode.value = !isDrawingMode.value;
       canvas.value.isDrawingMode = !canvas.value.isDrawingMode;
+      if(isAllowDraw.value)  { 
+        isAllowDraw.value = false;
+      }
     }
 
     function animateColorChange(object, newColor, duration) {
@@ -307,12 +369,14 @@ export default {
     }
 
     return {
+      pureColor, gradientColor,
+      drawingColorEl,
       isAllowDraw,
       isDrawingMode,
       height,
       anchors,
       canvas,
-      drawBtn,
+      fillBtn,
       isDrawingModeBtn
     };
   },
@@ -348,7 +412,7 @@ export default {
 }
 .app-canvas {
   width: 100%;
-  height: 100vw;
+  height: 70vh;
   touch-action: none;
 }
 </style>
