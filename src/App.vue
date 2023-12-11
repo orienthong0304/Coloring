@@ -1,7 +1,7 @@
 <template>
   <div id="app">
     <!-- <van-nav-bar title="标题"/> -->
-
+    <van-progress :percentage="percentage" stroke-width="10" />
     <van-floating-bubble icon="chat"/>
     <canvas
       id="c"
@@ -9,7 +9,7 @@
     <van-floating-panel v-model:height="height" :anchors="anchors">
       <van-row justify="space-around" style="margin-bottom: 10px;">
         <van-button type="primary" round class="btn" @click="fillBtn">
-          {{ isAllowDraw ? "关闭" : "填充" }}
+          {{ isFillingMode ? "关闭" : "填充" }}
         </van-button>
         <van-button type="primary" round class="btn" @click="isDrawingModeBtn">
           {{ isDrawingMode ? "关闭" : "画笔" }}
@@ -20,14 +20,14 @@
       </van-row>
 
       <van-row justify="space-around" style="margin-bottom: 10px;">
-        <van-button type="primary" round class="btn" @click="isDrawingModeBtn">
-          {{ isDrawingMode ? "关闭" : "撤销" }}
+        <van-button type="primary" round class="btn" @click="UndoBtn">
+          撤销
         </van-button>
-        <van-button type="primary" round class="btn" @click="isDrawingModeBtn">
-          {{ isDrawingMode ? "关闭" : "重做" }}
+        <van-button type="primary" round class="btn" @click="RedoBtn">
+          重做
         </van-button>
-        <van-button type="primary" round class="btn" @click="isDrawingModeBtn">
-          {{ isDrawingMode ? "关闭" : "清空" }}
+        <van-button type="primary" round class="btn" @click="ClearBtn">
+          清空
         </van-button>
       </van-row>
 
@@ -57,6 +57,7 @@
 import { onMounted, ref } from "vue";
 import { fabric } from "fabric";
 import { ColorInputWithoutInstance } from "tinycolor2";
+import { showConfirmDialog } from 'vant';
 
 export default {
   name: "App",
@@ -73,9 +74,17 @@ export default {
     const lastTouches = ref([]);
     const currentMidpoint = ref(null);
     //是否允许涂色
-    const isAllowDraw = ref(false);
+    const isFillingMode = ref(false);
     const isDrawingMode = ref(false);
-    const isDrawing = ref(false);
+    // 状态
+    const state = ref([]);
+    const index = ref(-1);
+    // 记录所有可以涂色的区域数量
+    const totalFill = ref(0);
+    // 记录当前涂色的区域数量
+    const currentFill = ref(0);
+    // 记录百分比
+    const percentage = ref(0);
 
     const anchors = [
     Math.round(0.3 * window.innerHeight),
@@ -93,6 +102,7 @@ export default {
         subTargetCheck: true,
         allowTouchScrolling: false,
         selection: false,
+        stateful: true
       });
 
       // 添加 svg
@@ -109,10 +119,16 @@ export default {
               selectable: false,
               objectCaching: false,
               evented: true, // 允许透明路径响应事件
+              id: generateId()
             });
             //把对象添加到画布，并相对居中
             canvas.value.add(obj);
+            // 如果是路径并且是白色，就记录数量
+            if (obj.type === "path" && obj.fill === "#fefefe") {
+              totalFill.value += 1;
+            }
           });
+          console.log("totalFill:", totalFill.value)
           // 将画布内容居中
           canvas.value.centerObject(group);
           // 给 group 添加一个外边框
@@ -153,25 +169,23 @@ export default {
       fabric.Object.prototype.transparentCorners = false; //画布边框
       canvas.value.on("mouse:down", function (options) {
         console.log("mouse:down", options)
-        if (!isAllowDraw.value) {
+        if (!isFillingMode.value) {
           return;
         }
         if (
           !isMutiTouch.value &&
           options.target &&
-          options.target.type === "path" &&
-          options.target.fill !== drawingColorEl.value
+          options.target.type === "path"
         ) {
-          var path = options.target;
-          selectedPath.value = path;
+          selectedPath.value = options.target;
           // 使用动画改变颜色
-          animateColorChange(path, drawingColorEl.value, 500); // 500 毫秒的动画时长
+          animateColorChange(selectedPath.value, drawingColorEl.value, 500); // 500 毫秒的动画时长
         }
       });
 
       canvas.value.on("mouse:move", function (options) {
         console.log("mouse:move", options.target)
-        // if (!isAllowDraw.value) {
+        // if (!isFillingMode.value) {
         //   return;
         // }
         // if (
@@ -190,7 +204,7 @@ export default {
 
       canvas.value.on("mouse:up", function (options) {
         console.log("mouse:up", options.target)
-        if (!isAllowDraw.value) {
+        if (!isFillingMode.value) {
           return;
         }
         if (
@@ -203,7 +217,7 @@ export default {
           var path = options.target;
           selectedPath.value = path;
           // 使用动画改变颜色
-          animateColorChange(path, drawingColorEl.value, 500); // 500 毫秒的动画时长
+          //animateColorChange(path, drawingColorEl.value, 500); // 500 毫秒的动画时长
         }
       });
 
@@ -215,8 +229,12 @@ export default {
           selectable: false,
           objectCaching: false,
         });
-        // canvas.value.renderAll();
-        // canvas.value.add(path);
+      });
+
+      // 监控 Object 修改
+      canvas.value.on("object:modified", function (options) {
+        index.value+=1;
+        state.value[index.value] = options.target.toJSON(["id","fromFill"]);
       });
 
       canvas.value.on("mouse:wheel", function (opt) {
@@ -298,10 +316,6 @@ export default {
                 scale
               );
             }
-            // if(!isDrawingMode) {
-            //   e.preventDefault();
-            //   e.stopPropagation();
-            // }
           }
           throttleTimer = null;
         });
@@ -321,7 +335,7 @@ export default {
     }
 
     function fillBtn() {
-      isAllowDraw.value = !isAllowDraw.value;
+      isFillingMode.value = !isFillingMode.value;
       if (isDrawingMode.value) {
         canvas.value.isDrawingMode = false;
         isDrawingMode.value = false;
@@ -331,15 +345,69 @@ export default {
     function isDrawingModeBtn() {
       isDrawingMode.value = !isDrawingMode.value;
       canvas.value.isDrawingMode = !canvas.value.isDrawingMode;
-      if(isAllowDraw.value)  { 
-        isAllowDraw.value = false;
+      if(isFillingMode.value)  { 
+        isFillingMode.value = false;
       }
+
+      canvas.value.freeDrawingBrush.color = drawingColorEl.value;
+      canvas.value.freeDrawingBrush.width = 10;
+    }
+
+    function UndoBtn() {
+      if (index.value >= 0) {
+        const object = getObjectById(state.value[index.value].id);
+        if (object) {
+          object.set("fill", state.value[index.value].fromFill);
+          index.value-=1;
+          canvas.value.renderAll();
+        }
+      }
+    }
+
+    function RedoBtn() {
+      if (index.value !== state.value.length-1) {
+        index.value+=1;
+        const object = getObjectById(state.value[index.value].id);
+        if (object) {
+          object.set("fill", state.value[index.value].fill);
+          canvas.value.renderAll();
+        }
+      }
+    }
+
+    function ClearBtn() {
+      showConfirmDialog({
+        title: "是否清除颜色？",
+        message: "请注意，清除后将无法恢复！",
+      })
+      .then(() => {
+        //清除涂过的颜色
+        canvas.value.forEachObject(function (obj) {
+          // 如果是路径并且不是白色，就清除
+          if (obj.type === "path" && obj.fill !== "#010101" && obj.fromFill) {
+            obj.set("fill", "#fefefe");
+            obj.set("fromFill", "");
+            index.value = 0
+            state.value = []
+            canvas.value.renderAll();
+          }
+        });  
+      })
+      .catch(() => {
+        
+      });
     }
 
     function animateColorChange(object, newColor, duration) {
       var startColor = new fabric.Color(object.fill).toRgb(); // 确保这是一个字符串格式的颜色值
       var endColor = new fabric.Color(newColor).toRgb(); // 确保这也是一个字符串格式的颜色值
-
+      // console.log("startColor:", startColor)
+      // console.log("endColor:", endColor)
+      // 如果颜色相同或者是黑色，就不需要涂色
+      if (startColor === endColor || startColor === "rgb(1,1,1)") {
+        return;
+      }
+      isFillingMode.value = false
       fabric.util.animate({
         startValue: fabric.Color.sourceFromRgb(startColor),
         endValue: fabric.Color.sourceFromRgb(endColor),
@@ -349,10 +417,36 @@ export default {
           canvas.value.renderAll();
         },
         onComplete: function () {
+          isFillingMode.value = true
           object.set("fill", endColor);
+          object.set("fromFill", startColor)
+          canvas.value.fire("object:modified", { target: object })
           canvas.value.renderAll();
+
+          // 计算当前涂色的区域数量
+          currentFill.value +=1;
+          // 计算百分比
+          percentage.value = Math.round((currentFill.value / totalFill.value) * 100);
+          console.log("percentage:", percentage.value)
+
         },
       });
+    }
+
+    // 生成唯一ID，例如 id-fsdhsd
+    function generateId() {
+      return "id-" + Math.floor(Math.random() * 16777215).toString(16);
+    }
+
+    // 根据 ID 获取 Canvas 的 Object
+    function getObjectById(id) {
+      var object = null;
+      canvas.value.forEachObject(function (obj) {
+        if (obj.id === id) {
+          object = obj;
+        }
+      });
+      return object;
     }
 
     function getDistance(touch1, touch2) {
@@ -371,37 +465,25 @@ export default {
     return {
       pureColor, gradientColor,
       drawingColorEl,
-      isAllowDraw,
+      isFillingMode,
       isDrawingMode,
       height,
       anchors,
       canvas,
+      state,
+      index,
+      percentage,
       fillBtn,
-      isDrawingModeBtn
+      isDrawingModeBtn,
+      UndoBtn,
+      RedoBtn,
+      ClearBtn
     };
   },
   mounted() {
     console.log("mounted")
   },
   methods: {
-    canvasTouchStart(e) {
-      console.log(e);
-      if (e.touches.length > 1) {
-        isMutiTouch.value = true;
-      }
-    },
-
-    canvasTouchMove(e) {
-      if (e.touches.length > 1) {
-        isMutiTouch.value = true;
-      }
-    },
-
-    canvasTouchEnd(e) {
-      if (e.touches.length === 0) {
-        isMutiTouch.value = false;
-      }
-    },
   },
 };
 </script>
@@ -414,5 +496,6 @@ export default {
   width: 100%;
   height: 70vh;
   touch-action: none;
+  /* color:#fefefe; */
 }
 </style>
