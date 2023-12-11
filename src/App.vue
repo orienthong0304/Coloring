@@ -38,8 +38,8 @@
         <van-button type="primary" round class="btn" @click="isDrawingModeBtn">
           {{ isDrawingMode ? "关闭" : "分享" }}
         </van-button>
-        <van-button type="primary" round class="btn" @click="isDrawingModeBtn">
-          {{ isDrawingMode ? "关闭" : "下载" }}
+        <van-button type="primary" round class="btn" @click="LocateBtn">
+          定位
         </van-button>
       </van-row>
 
@@ -107,7 +107,7 @@ export default {
 
       // 添加 svg
       fabric.loadSVGFromURL(
-        "https://raw.githubusercontent.com/orienthong0304/Coloring/main/coloring/1.svg",
+        "https://raw.githubusercontent.com/orienthong0304/Coloring/main/coloring/star.svg",
         function (objects, options) {
           var group = fabric.util.groupSVGElements(objects, options);
           // 根据 Canvas 画布尺寸压缩大小
@@ -123,8 +123,8 @@ export default {
             });
             //把对象添加到画布，并相对居中
             canvas.value.add(obj);
-            // 如果是路径并且是白色，就记录数量
-            if (obj.type === "path" && obj.fill === "#fefefe") {
+            if ((obj.fill.includes("#fc") || obj.fill.includes("#fd") || obj.fill.includes("#ff")) && obj.type === "path") {
+              obj.set("fill", "#ffffff");
               totalFill.value += 1;
             }
           });
@@ -184,7 +184,23 @@ export default {
       });
 
       canvas.value.on("mouse:move", function (options) {
-        console.log("mouse:move", options.target)
+        // console.log("mouse:move", options.target)
+        if (!isFillingMode.value) {
+          return;
+        }
+        if (
+          !isMutiTouch.value &&
+          options.target &&
+          options.target.type === "path"
+        ) {
+          selectedPath.value = options.target;
+          // 使用动画改变颜色
+          animateColorChange(selectedPath.value, drawingColorEl.value, 200); // 500 毫秒的动画时长
+        }
+      });
+
+      canvas.value.on("mouse:up", function (options) {
+        // console.log("mouse:up", options.target)
         // if (!isFillingMode.value) {
         //   return;
         // }
@@ -198,27 +214,8 @@ export default {
         //   var path = options.target;
         //   selectedPath.value = path;
         //   // 使用动画改变颜色
-        //   animateColorChange(path, drawingColorEl.value, 500); // 500 毫秒的动画时长
+        //   //animateColorChange(path, drawingColorEl.value, 500); // 500 毫秒的动画时长
         // }
-      });
-
-      canvas.value.on("mouse:up", function (options) {
-        console.log("mouse:up", options.target)
-        if (!isFillingMode.value) {
-          return;
-        }
-        if (
-          !isMutiTouch.value &&
-          options.target &&
-          options.target.type === "path" &&
-          options.target.fill !== drawingColorEl.value &&
-          options.target.id !== "#010101ff"
-        ) {
-          var path = options.target;
-          selectedPath.value = path;
-          // 使用动画改变颜色
-          //animateColorChange(path, drawingColorEl.value, 500); // 500 毫秒的动画时长
-        }
       });
 
       canvas.value.on("path:created", function (e) {
@@ -296,33 +293,35 @@ export default {
     let throttleTimer;
     
     function canvasTouchMove(e) {
-      // 节流处理，减少函数调用频率
-      if (!throttleTimer) {
-        throttleTimer = requestAnimationFrame(() => {
-          // 处理多点触控
-          if (e.touches.length > 1) {
-            isMutiTouch.value = true;
-            // 计算当前距离和缩放比例
-            var currentDistance = getDistance(e.touches[0], e.touches[1]);
-            var scale = (currentDistance / initialDistance.value) * lastScale.value;
-            // 限制缩放比例范围
-            scale = Math.max(1, Math.min(scale, 20));
-            // 自动居中画布（当缩放比例为1）
-            if (scale === 1) {
-              canvas.value.setViewportTransform([1, 0, 0, 1, 0, 0]);
-            } else {
-              canvas.value.zoomToPoint(
-                new fabric.Point(currentMidpoint.value.x, currentMidpoint.value.y),
-                scale
-              );
+      if(e.touches.length > 1) {
+        // 节流处理，减少函数调用频率
+        if (!throttleTimer) {
+          throttleTimer = requestAnimationFrame(() => {
+            // 处理多点触控
+            if (e.touches.length > 1) {
+              isMutiTouch.value = true;
+              // 计算当前距离和缩放比例
+              var currentDistance = getDistance(e.touches[0], e.touches[1]);
+              var scale = (currentDistance / initialDistance.value) * lastScale.value;
+              // 限制缩放比例范围
+              scale = Math.max(1, Math.min(scale, 20));
+              // 自动居中画布（当缩放比例为1）
+              if (scale === 1) {
+                canvas.value.setViewportTransform([1, 0, 0, 1, 0, 0]);
+              } else {
+                canvas.value.zoomToPoint(
+                  new fabric.Point(currentMidpoint.value.x, currentMidpoint.value.y),
+                  scale
+                );
+              }
             }
-          }
-          throttleTimer = null;
-        });
-      }
-      if (!isDrawingMode.value) {
-        e.preventDefault();
-        e.stopPropagation();
+            throttleTimer = null;
+          });
+        }
+        if (!isDrawingMode.value) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
       }
     }
 
@@ -384,11 +383,12 @@ export default {
         //清除涂过的颜色
         canvas.value.forEachObject(function (obj) {
           // 如果是路径并且不是白色，就清除
-          if (obj.type === "path" && obj.fill !== "#010101" && obj.fromFill) {
-            obj.set("fill", "#fefefe");
-            obj.set("fromFill", "");
+          if (obj.type === "path" && obj.fill !== "#ffffff" && obj.fromFill) {
+            obj.set("fill", "#ffffff");
+            obj.set("fromFill", null);
             index.value = 0
             state.value = []
+            percentage.value = 0
             canvas.value.renderAll();
           }
         });  
@@ -398,13 +398,48 @@ export default {
       });
     }
 
+    function LocateBtn() {
+      let locateObj = null;
+      for (let i = 0; i < canvas.value.getObjects().length; i++) {
+          const obj = canvas.value.getObjects()[i];
+          if (obj.type === "path" && obj.fill === "#ffffff" && obj.fromFill !== null) {
+              locateObj = obj;
+              break;
+          }
+      }
+
+      if (locateObj) {
+        console.log("locateObj:", locateObj)
+          // 考虑缩放因子
+          const scaleX = locateObj.scaleX || 1;
+          const scaleY = locateObj.scaleY || 1;
+          const centerPoint = new fabric.Point(
+              locateObj.left + (locateObj.width * scaleX) / 2,
+              locateObj.top + (locateObj.height * scaleY) / 2
+          );
+          zoomAndPanToPoint(centerPoint);
+      }
+    }
+
+
+    function zoomAndPanToPoint(point) {
+      const zoomLevel = 2; // 选择合适的缩放级别
+      canvas.value.zoomToPoint(point, zoomLevel);
+      const x = -point.x * zoomLevel + canvas.value.width / 2;
+      const y = -point.y * zoomLevel + canvas.value.height / 2;
+      canvas.value.absolutePan(new fabric.Point(x, y));
+    }
+
+
+
     function animateColorChange(object, newColor, duration) {
       var startColor = new fabric.Color(object.fill).toRgb(); // 确保这是一个字符串格式的颜色值
       var endColor = new fabric.Color(newColor).toRgb(); // 确保这也是一个字符串格式的颜色值
+      // console.log("object-fill:", object.fill)
       // console.log("startColor:", startColor)
       // console.log("endColor:", endColor)
       // 如果颜色相同或者是黑色，就不需要涂色
-      if (startColor === endColor || startColor === "rgb(1,1,1)") {
+      if (!isFillingMode.value || startColor === endColor || startColor !== "rgb(255,255,255)") {
         return;
       }
       isFillingMode.value = false
@@ -477,11 +512,12 @@ export default {
       isDrawingModeBtn,
       UndoBtn,
       RedoBtn,
-      ClearBtn
+      ClearBtn,
+      LocateBtn,
     };
   },
   mounted() {
-    console.log("mounted")
+    // console.log("mounted")
   },
   methods: {
   },
@@ -496,6 +532,6 @@ export default {
   width: 100%;
   height: 70vh;
   touch-action: none;
-  /* color:#fefefe; */
+  color:#ffffff;
 }
 </style>
